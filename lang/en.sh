@@ -1,5 +1,6 @@
 #!/usr/bin/env zsh
 # Claude Launcher - English language file
+_CL_LANG_LABEL="English"
 
 # Menu items
 _CL_MSG_MENU_TERMINAL="[→ Normal Terminal]"

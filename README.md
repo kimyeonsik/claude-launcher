@@ -30,6 +30,17 @@ cd claude-launcher
 zsh install.sh
 ```
 
+During installation, you'll be prompted to select a language:
+
+```
+  Available languages:
+  * 1) Auto-detect (from $LANG)
+    2) English
+    3) 한국어 (Korean)
+
+  Select language [1]:
+```
+
 Then open a new terminal, or:
 
 ```bash
@@ -86,20 +97,30 @@ Opens automatically with every new terminal:
 CLAUDE_LAUNCHER_SKIP=1 zsh
 ```
 
-### Set language
+### Language
+
+Language is selected during installation. To change later:
 
 ```bash
-# Auto-detect from $LANG (default)
-# Or set explicitly:
-export CLAUDE_LAUNCHER_LANG=en  # English
-export CLAUDE_LAUNCHER_LANG=ko  # Korean
+zsh install.sh                          # reinstall with new selection
+export CLAUDE_LAUNCHER_LANG=ko          # override via env var
 ```
+
+Priority: `$CLAUDE_LAUNCHER_LANG` > config file > `$LANG` auto-detect > English
+
+### Adding a new language
+
+1. Copy `lang/en.sh` to `lang/{code}.sh` (e.g. `lang/ja.sh`)
+2. Update `_CL_LANG_LABEL` (e.g. `"日本語 (Japanese)"`)
+3. Translate all `_CL_MSG_*` strings
+4. Run `zsh install.sh` — the new language appears automatically
 
 ## File structure
 
 ```
 ~/.local/bin/claude-launcher          # Main script
 ~/.config/claude-launcher/
+├── config                            # Language setting (LANG=ko)
 ├── projects.json                     # Project list (JSON)
 ├── preview.sh                        # fzf preview script (auto-generated)
 └── lang/
@@ -213,18 +234,21 @@ CLAUDE_LAUNCHER_SKIP=1 zsh
 
 ### 언어 설정
 
+설치 시 언어를 선택할 수 있습니다. 나중에 변경하려면:
+
 ```bash
-# $LANG 에서 자동 감지 (기본값)
-# 또는 직접 설정:
-export CLAUDE_LAUNCHER_LANG=en  # 영어
-export CLAUDE_LAUNCHER_LANG=ko  # 한국어
+zsh install.sh                          # 재설치하면서 언어 다시 선택
+export CLAUDE_LAUNCHER_LANG=ko          # 환경 변수로 오버라이드
 ```
+
+우선순위: `$CLAUDE_LAUNCHER_LANG` > config 파일 > `$LANG` 자동 감지 > 영어
 
 ## 파일 구조
 
 ```
 ~/.local/bin/claude-launcher          # 메인 스크립트
 ~/.config/claude-launcher/
+├── config                            # 언어 설정 (LANG=ko)
 ├── projects.json                     # 프로젝트 목록 (JSON)
 ├── preview.sh                        # fzf 미리보기 스크립트 (자동 생성)
 └── lang/

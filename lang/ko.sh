@@ -1,5 +1,6 @@
 #!/usr/bin/env zsh
 # Claude Launcher - Korean language file
+_CL_LANG_LABEL="한국어 (Korean)"
 
 # Menu items
 _CL_MSG_MENU_TERMINAL="[→ 일반 터미널로]"

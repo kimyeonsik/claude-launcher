@@ -1,10 +1,11 @@
 #!/usr/bin/env zsh
 # Claude Launcher - Install script
 
-set -e
+# No set -e: we handle errors explicitly via fail()
 
 INSTALL_DIR="$HOME/.local/bin"
 CONFIG_DIR="$HOME/.config/claude-launcher"
+CONFIG_FILE="$CONFIG_DIR/config"
 LANG_DIR="$CONFIG_DIR/lang"
 PROJECTS_FILE="$CONFIG_DIR/projects.json"
 ZSHRC="$HOME/.zshrc"
@@ -75,9 +76,78 @@ else
     warn "Language directory not found, using defaults"
 fi
 
-# ── 5. Init config directory ────────────────────────────────────────────────
+# ── 5. Select language ──────────────────────────────────────────────────────
+info "Selecting language..."
+
+# Scan available languages from lang/ directory
+typeset -a _lang_codes _lang_labels
+_lang_idx=0
+_code=""
+_label=""
+for f in "$SCRIPT_DIR/lang/"*.sh(N); do
+    _code="${f:t:r}"  # filename without extension
+    _label=$(grep '^_CL_LANG_LABEL=' "$f" 2>/dev/null | head -1 | cut -d'"' -f2)
+    [[ -z "$_label" ]] && _label="$_code"
+    _lang_codes+=("$_code")
+    _lang_labels+=("$_label")
+    (( _lang_idx++ ))
+done
+
+SELECTED_LANG="auto"
+
+if (( _lang_idx >= 1 )); then
+    echo ""
+    echo "  Available languages:"
+    printf "  * 1) Auto-detect (from \$LANG)\n"
+    for (( i=1; i<=_lang_idx; i++ )); do
+        printf "    %d) %s\n" "$(( i + 1 ))" "${_lang_labels[$i]}"
+    done
+    echo ""
+    printf "  Select language [1]: "
+    _choice=""
+    { read -r _choice < /dev/tty } 2>/dev/null || true
+
+    # Default to 1 (auto-detect)
+    [[ -z "$_choice" ]] && _choice=1
+
+    if [[ "$_choice" == "1" ]]; then
+        SELECTED_LANG="auto"
+    elif [[ "$_choice" -ge 2 && "$_choice" -le $(( _lang_idx + 1 )) ]] 2>/dev/null; then
+        SELECTED_LANG="${_lang_codes[$(( _choice - 1 ))]}"
+    else
+        warn "Invalid choice, defaulting to auto-detect"
+        SELECTED_LANG="auto"
+    fi
+fi
+
+if [[ "$SELECTED_LANG" == "auto" ]]; then
+    ok "Language: auto-detect"
+else
+    ok "Language: $SELECTED_LANG"
+fi
+
+# ── 6. Init config directory ────────────────────────────────────────────────
 info "Initializing config..."
 mkdir -p "$CONFIG_DIR"
+
+# Save language selection to config (auto = remove LANG line, let auto-detect work)
+if [[ "$SELECTED_LANG" == "auto" ]]; then
+    if [[ -f "$CONFIG_FILE" ]]; then
+        sed -i '' '/^LANG=/d' "$CONFIG_FILE"
+    fi
+    ok "Language: auto-detect (saved)"
+else
+    if [[ -f "$CONFIG_FILE" ]]; then
+        if grep -q '^LANG=' "$CONFIG_FILE" 2>/dev/null; then
+            sed -i '' "s/^LANG=.*/LANG=$SELECTED_LANG/" "$CONFIG_FILE"
+        else
+            printf "LANG=%s\n" "$SELECTED_LANG" >> "$CONFIG_FILE"
+        fi
+    else
+        printf "LANG=%s\n" "$SELECTED_LANG" > "$CONFIG_FILE"
+    fi
+    ok "Language: $SELECTED_LANG (saved)"
+fi
 if [[ ! -f "$PROJECTS_FILE" ]]; then
     printf "[]" > "$PROJECTS_FILE"
     ok "~/.config/claude-launcher/projects.json created"
@@ -85,7 +155,7 @@ else
     ok "~/.config/claude-launcher/projects.json preserved (existing data kept)"
 fi
 
-# ── 6. Register in .zshrc ───────────────────────────────────────────────────
+# ── 7. Register in .zshrc ───────────────────────────────────────────────────
 info "Registering in .zshrc..."
 LAUNCHER_LINE='[[ -f "$HOME/.local/bin/claude-launcher" ]] && source "$HOME/.local/bin/claude-launcher"'
 
@@ -112,7 +182,7 @@ echo ""
 echo "  Open terminal without launcher:"
 echo "    CLAUDE_LAUNCHER_SKIP=1 zsh"
 echo ""
-echo "  Set language (default: auto-detect from \$LANG):"
-echo "    export CLAUDE_LAUNCHER_LANG=ko  # Korean"
-echo "    export CLAUDE_LAUNCHER_LANG=en  # English"
+echo "  Change language later:"
+echo "    zsh install.sh                          # reinstall with new selection"
+echo "    export CLAUDE_LAUNCHER_LANG=ko          # override via env var"
 echo ""

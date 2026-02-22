@@ -29,17 +29,34 @@ _CL_FIND=$(command -v find 2>/dev/null)
 [[ -z "$_CL_FIND" ]] && _CL_FIND="/usr/bin/find"
 
 # ─── Language detection ──────────────────────────────────────────────────────
+# Priority: $CLAUDE_LAUNCHER_LANG > config file > $LANG > "en"
+
+_CL_CONFIG_FILE="$_CL_CONFIG_DIR/config"
+_CL_LANG_DIR="$_CL_CONFIG_DIR/lang"
 
 _cl_detect_lang() {
-  local lang="${CLAUDE_LAUNCHER_LANG:-${LANG:-en}}"
-  case "$lang" in
-    ko*|Korean*) echo "ko" ;;
-    *)           echo "en" ;;
+  # 1. Env var override
+  if [[ -n "$CLAUDE_LAUNCHER_LANG" ]]; then
+    echo "$CLAUDE_LAUNCHER_LANG"
+    return
+  fi
+  # 2. Saved config
+  if [[ -f "$_CL_CONFIG_FILE" ]]; then
+    local saved
+    saved=$(grep '^LANG=' "$_CL_CONFIG_FILE" 2>/dev/null | head -1 | cut -d= -f2)
+    if [[ -n "$saved" ]]; then
+      echo "$saved"
+      return
+    fi
+  fi
+  # 3. Auto-detect from $LANG
+  case "${LANG:-en}" in
+    ko*) echo "ko" ;;
+    *)   echo "en" ;;
   esac
 }
 
 _CL_LANG=$(_cl_detect_lang)
-_CL_LANG_DIR="$_CL_CONFIG_DIR/lang"
 
 # Source language file (installed location first, then repo fallback)
 if [[ -f "$_CL_LANG_DIR/${_CL_LANG}.sh" ]]; then
