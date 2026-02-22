@@ -1,10 +1,10 @@
 #!/usr/bin/env zsh
-# Claude Code Launcher - 터미널 시작 시 프로젝트 선택기
+# Claude Launcher - Project selector on terminal startup
 #
-# 설치: ~/.zshrc 마지막에 아래 줄 추가
+# Install: add to end of ~/.zshrc
 #   [[ -f "$HOME/.local/bin/claude-launcher" ]] && source "$HOME/.local/bin/claude-launcher"
 #
-# 런처 없이 터미널 열기:
+# Open terminal without launcher:
 #   CLAUDE_LAUNCHER_SKIP=1 zsh
 
 _CL_CONFIG_DIR="$HOME/.config/claude-launcher"
@@ -12,7 +12,7 @@ _CL_PROJECTS_FILE="$_CL_CONFIG_DIR/projects.json"
 _CL_PREVIEW_SCRIPT="$_CL_CONFIG_DIR/preview.sh"
 _CL_TIMEOUT=5
 
-# 외부 명령어 절대경로 고정 (함수 실행 시점의 PATH에 무관하게 동작)
+# Resolve absolute paths for external commands (independent of PATH at function runtime)
 _CL_PYTHON3=$(command -v python3 2>/dev/null)
 [[ -z "$_CL_PYTHON3" && -x "/opt/homebrew/bin/python3" ]] && _CL_PYTHON3="/opt/homebrew/bin/python3"
 [[ -z "$_CL_PYTHON3" && -x "/usr/local/bin/python3" ]]   && _CL_PYTHON3="/usr/local/bin/python3"
@@ -28,14 +28,61 @@ _CL_SLEEP=$(command -v sleep 2>/dev/null)
 _CL_FIND=$(command -v find 2>/dev/null)
 [[ -z "$_CL_FIND" ]] && _CL_FIND="/usr/bin/find"
 
-# ─── 초기화 ───────────────────────────────────────────────────────────────────
+# ─── Language detection ──────────────────────────────────────────────────────
+
+_cl_detect_lang() {
+  local lang="${CLAUDE_LAUNCHER_LANG:-${LANG:-en}}"
+  case "$lang" in
+    ko*|Korean*) echo "ko" ;;
+    *)           echo "en" ;;
+  esac
+}
+
+_CL_LANG=$(_cl_detect_lang)
+_CL_LANG_DIR="$_CL_CONFIG_DIR/lang"
+
+# Source language file (installed location first, then repo fallback)
+if [[ -f "$_CL_LANG_DIR/${_CL_LANG}.sh" ]]; then
+  source "$_CL_LANG_DIR/${_CL_LANG}.sh"
+elif [[ -f "${0:A:h}/lang/${_CL_LANG}.sh" ]]; then
+  source "${0:A:h}/lang/${_CL_LANG}.sh"
+else
+  # Fallback defaults (English)
+  _CL_MSG_MENU_TERMINAL="[→ Normal Terminal]"
+  _CL_MSG_MENU_ADD="[+ Add New Project]"
+  _CL_MSG_FZF_HEADER=" Claude Code Launcher | Enter:Select  Esc:Exit"
+  _CL_MSG_BROWSE_HEADER=" Browse Directories | Type to filter  Enter:Select  Esc:Cancel"
+  _CL_MSG_COUNTDOWN_L1="Press any key to open project list."
+  _CL_MSG_COUNTDOWN_L2="%d seconds until normal terminal."
+  _CL_MSG_COUNTDOWN_TIP="Tip: CLAUDE_LAUNCHER_SKIP=1 zsh to skip"
+  _CL_MSG_ADD_TITLE="Add New Project"
+  _CL_MSG_ADD_NAME="  Name: "
+  _CL_MSG_ADD_NAME_REQ="  Name is required."
+  _CL_MSG_ADD_BROWSE="  Browse and select a directory..."
+  _CL_MSG_ADD_CANCEL="  Cancelled."
+  _CL_MSG_ADD_INVALID="  Invalid path."
+  _CL_MSG_ADD_OK="  '%s' added"
+  _CL_MSG_ADD_DUP="  Path already registered."
+  _CL_MSG_ADD_ERR="  Error: %s"
+  _CL_MSG_PATH_ERR="Path not found: '%s'"
+  _CL_MSG_NO_PY="Claude Launcher: python3 not found."
+  _CL_MSG_NO_FZF="Claude Launcher: fzf is not installed."
+  _CL_MSG_NO_FZF_HINT="   Install: brew install fzf"
+  _CL_MSG_NO_LAST="none"
+  _CL_MSG_PREV_NOPATH="Path not found:"
+  _CL_MSG_PREV_TERM="Exit launcher and start terminal in current directory."
+  _CL_MSG_PREV_ADD1="Add a new project to the list."
+  _CL_MSG_PREV_ADD2="Enter project name and path to save to projects.json."
+fi
+
+# ─── Init ────────────────────────────────────────────────────────────────────
 
 _cl_init() {
   mkdir -p "$_CL_CONFIG_DIR"
   [[ -f "$_CL_PROJECTS_FILE" ]] || printf "[]" > "$_CL_PROJECTS_FILE"
 
-  # fzf 미리보기 스크립트 생성 (shebang 없이 python3로 직접 실행)
-  cat > "$_CL_PREVIEW_SCRIPT" << 'PREVIEW_EOF'
+  # Generate fzf preview script with current language strings
+  cat > "$_CL_PREVIEW_SCRIPT" << PREVIEW_EOF
 import sys, os, subprocess
 
 line = sys.stdin.read().strip()
@@ -50,39 +97,38 @@ if SEP in line:
         for l in r.stdout.splitlines()[:25]:
             print(l)
     else:
-        print(f"⚠️  경로를 찾을 수 없습니다: {path!r}")
-elif "일반 터미널" in line:
-    print("💻  런처를 종료하고 현재 디렉토리에서 터미널을 시작합니다.")
-elif "새 프로젝트" in line:
-    print("➕  새 프로젝트를 목록에 추가합니다.\n")
-    print("프로젝트 이름과 경로를 입력하면 projects.json에 저장됩니다.")
+        print(f"⚠️  ${_CL_MSG_PREV_NOPATH} {path!r}")
+elif line.startswith("[→"):
+    print("💻  ${_CL_MSG_PREV_TERM}")
+elif line.startswith("[+"):
+    print("➕  ${_CL_MSG_PREV_ADD1}\n")
+    print("${_CL_MSG_PREV_ADD2}")
 else:
     print(f"▶  {line}")
 PREVIEW_EOF
 }
 
-# ─── JSON 조작 (Python3) ──────────────────────────────────────────────────────
+# ─── JSON operations (Python3) ───────────────────────────────────────────────
 
-# projects.json → last_used 내림차순 정렬된 라인 출력
 _cl_list_projects() {
-  "$_CL_PYTHON3" - "$_CL_PROJECTS_FILE" << 'PYEOF'
+  "$_CL_PYTHON3" - "$_CL_PROJECTS_FILE" "$_CL_MSG_NO_LAST" << 'PYEOF'
 import json, sys
 
 try:
     with open(sys.argv[1]) as f:
         projects = json.load(f)
+    no_last = sys.argv[2] if len(sys.argv) > 2 else "none"
     projects.sort(key=lambda p: p.get("last_used", ""), reverse=True)
     for p in projects:
         name = p.get("name", "?")
         path = p.get("path", "")
-        last = p.get("last_used", "없음")
+        last = p.get("last_used", no_last)
         print(f"{name:<25} \u2502 {path:<50} \u2502 {last}")
 except Exception:
     pass
 PYEOF
 }
 
-# 선택된 프로젝트의 last_used 현재 시각으로 갱신
 _cl_touch_project() {
   local target="$1"
   "$_CL_PYTHON3" - "$_CL_PROJECTS_FILE" "$target" << 'PYEOF'
@@ -102,7 +148,6 @@ except Exception:
 PYEOF
 }
 
-# 새 프로젝트 추가
 _cl_add_project() {
   local name="$1" path="$2"
   "$_CL_PYTHON3" - "$_CL_PROJECTS_FILE" "$name" "$path" << 'PYEOF'
@@ -130,7 +175,6 @@ except Exception as e:
 PYEOF
 }
 
-# 프로젝트 제거
 _cl_remove_project() {
   local target="$1"
   "$_CL_PYTHON3" - "$_CL_PROJECTS_FILE" "$target" << 'PYEOF'
@@ -150,17 +194,16 @@ PYEOF
 
 # ─── UI ──────────────────────────────────────────────────────────────────────
 
-# fzf 프로젝트 선택기 실행 → 선택 항목 반환
 _cl_pick() {
   local list
   list=$(_cl_list_projects)
 
   {
-    echo "[→ 일반 터미널로]"
-    echo "[+ 새 프로젝트 추가]"
+    echo "$_CL_MSG_MENU_TERMINAL"
+    echo "$_CL_MSG_MENU_ADD"
     [[ -n "$list" ]] && printf "%s\n" "$list"
   } | "$_CL_FZF" \
-    --header=" Claude Code Launcher │ Enter:선택  Esc:종료" \
+    --header="$_CL_MSG_FZF_HEADER" \
     --preview="echo {} | \"$_CL_PYTHON3\" \"$_CL_PREVIEW_SCRIPT\"" \
     --preview-window="right:50%:wrap" \
     --height="80%" \
@@ -171,7 +214,6 @@ _cl_pick() {
     --ansi
 }
 
-# fzf 디렉토리 탐색기 → 선택한 절대 경로 반환
 _cl_browse_dir() {
   local start="${1:-$HOME}"
   "$_CL_FIND" "$start" -maxdepth 5 -type d \
@@ -180,7 +222,7 @@ _cl_browse_dir() {
        -o -name "venv" -o -name ".hg" \) -prune \
     -o -type d -print 2>/dev/null | \
   "$_CL_FZF" \
-    --header=" 디렉토리 탐색 │ 타이핑으로 필터  Enter:선택  Esc:취소" \
+    --header="$_CL_MSG_BROWSE_HEADER" \
     --preview="ls -lah {}" \
     --preview-window="right:50%:wrap" \
     --height="80%" \
@@ -189,42 +231,38 @@ _cl_browse_dir() {
     --pointer="→"
 }
 
-# 새 프로젝트 추가 인터랙션
 _cl_handle_add() {
   printf "\n"
-  printf "┌─ 새 프로젝트 추가 ─────────────────────────────────┐\n"
+  printf "┌─ %s ─────────────────────────────────────────────┐\n" "$_CL_MSG_ADD_TITLE"
   printf "│                                                    │\n"
 
   local name path
 
-  printf "│  이름: "
+  printf "│%s" "$_CL_MSG_ADD_NAME"
   read -r name < /dev/tty
 
   if [[ -z "$name" ]]; then
-    printf "│  ❌ 이름을 입력해야 합니다.\n"
+    printf "│  ❌ %s\n" "$_CL_MSG_ADD_NAME_REQ"
     printf "└────────────────────────────────────────────────────┘\n"
     "$_CL_SLEEP" 1
     return 1
   fi
 
-  # fzf 디렉토리 탐색기로 경로 선택
-  printf "│  경로를 탐색하여 선택하세요...\n"
+  printf "│  %s\n" "$_CL_MSG_ADD_BROWSE"
   printf "└────────────────────────────────────────────────────┘\n"
 
   path=$(_cl_browse_dir)
 
-  # ESC 또는 선택 취소
   if [[ -z "$path" ]]; then
-    printf "\n  취소되었습니다.\n"
+    printf "\n  %s\n" "$_CL_MSG_ADD_CANCEL"
     "$_CL_SLEEP" 1
     return 1
   fi
 
-  # 상대 경로 → 절대 경로 변환
   path=$(cd "$path" 2>/dev/null && pwd)
 
   if [[ -z "$path" || ! -d "$path" ]]; then
-    printf "\n  ❌ 유효하지 않은 경로입니다.\n"
+    printf "\n  ❌ %s\n" "$_CL_MSG_ADD_INVALID"
     "$_CL_SLEEP" 2
     return 1
   fi
@@ -234,20 +272,19 @@ _cl_handle_add() {
 
   printf "\n"
   case "$result" in
-    OK)        printf "  ✅ '%s' 추가됨\n     %s\n" "$name" "$path" ;;
-    DUPLICATE) printf "  ⚠️  이미 등록된 경로입니다.\n" ;;
-    ERROR:*)   printf "  ❌ 오류: %s\n" "${result#ERROR:}" ;;
+    OK)        printf "  ✅ $_CL_MSG_ADD_OK\n     %s\n" "$name" "$path" ;;
+    DUPLICATE) printf "  ⚠️  %s\n" "$_CL_MSG_ADD_DUP" ;;
+    ERROR:*)   printf "  ❌ $_CL_MSG_ADD_ERR\n" "${result#ERROR:}" ;;
   esac
 
   "$_CL_SLEEP" 1
   return 0
 }
 
-# ─── 런처 실행 훅 ────────────────────────────────────────────────────────────
-# .zshrc 소스 완료 직후 precmd 훅으로 한 번만 실행 → Warp 타임아웃 방지
+# ─── Launch hook ─────────────────────────────────────────────────────────────
+# Runs once via precmd hook after .zshrc finishes sourcing (Warp compatibility)
 
 _cl_do_launch() {
-  # 훅에서 자기 자신 제거 (한 번만 실행)
   add-zsh-hook -d precmd _cl_do_launch 2>/dev/null
 
   local target="$_CL_LAUNCH_PATH"
@@ -260,41 +297,36 @@ _cl_do_launch() {
   unset CLAUDE_LAUNCHER_SKIP
 }
 
-# ─── 메인 ────────────────────────────────────────────────────────────────────
+# ─── Main ────────────────────────────────────────────────────────────────────
 
 _cl_main() {
-  # 비인터랙티브 쉘 (스크립트, cron 등) 무시
   [[ ! -o interactive ]] && return 0
-  # 재귀 방지: claude 실행 후 내부 서브쉘 등
   [[ -n "$CLAUDE_LAUNCHER_SKIP" ]] && return 0
 
-  # Python3 없으면 조용히 종료
   if [[ -z "$_CL_PYTHON3" ]]; then
-    printf "\n⚠️  Claude Launcher: python3를 찾을 수 없습니다.\n\n"
+    printf "\n⚠️  %s\n\n" "$_CL_MSG_NO_PY"
     return 0
   fi
 
-  # fzf 없으면 안내 후 종료
   if [[ -z "$_CL_FZF" ]]; then
-    printf "\n⚠️  Claude Launcher: fzf가 설치되어 있지 않습니다.\n"
-    printf "   설치: brew install fzf\n\n"
+    printf "\n⚠️  %s\n" "$_CL_MSG_NO_FZF"
+    printf "%s\n\n" "$_CL_MSG_NO_FZF_HINT"
     return 0
   fi
 
   _cl_init
 
-  # ── 카운트다운 화면 ──
+  # Countdown screen
   clear
   printf "╔══════════════════════════════════════════════════════╗\n"
   printf "║              Claude Code Launcher                    ║\n"
   printf "║                                                      ║\n"
-  printf "║   아무 키나 누르면 프로젝트 목록이 표시됩니다.       ║\n"
-  printf "║   %d초 후 일반 터미널로 자동 전환됩니다.             ║\n" "$_CL_TIMEOUT"
+  printf "║   %-49s  ║\n" "$_CL_MSG_COUNTDOWN_L1"
+  printf "║   %-49s  ║\n" "$(printf "$_CL_MSG_COUNTDOWN_L2" "$_CL_TIMEOUT")"
   printf "║                                                      ║\n"
-  printf "║   팁: CLAUDE_LAUNCHER_SKIP=1 zsh 으로 바로 열기      ║\n"
+  printf "║   %-49s  ║\n" "$_CL_MSG_COUNTDOWN_TIP"
   printf "╚══════════════════════════════════════════════════════╝\n"
 
-  # 키 입력 대기 (타임아웃 시 일반 터미널)
   local k
   if ! read -t $_CL_TIMEOUT -k 1 -s k 2>/dev/null; then
     printf "\n"
@@ -302,26 +334,24 @@ _cl_main() {
   fi
   printf "\n"
 
-  # ── fzf 선택 루프 (새 프로젝트 추가 후 재선택 지원) ──
+  # fzf selection loop
   while true; do
     local sel
     sel=$(_cl_pick)
 
-    # ESC 또는 Ctrl+C → 일반 터미널
     [[ -z "$sel" ]] && break
 
     case "$sel" in
-      "[→ 일반 터미널로]")
+      "$_CL_MSG_MENU_TERMINAL")
         break
         ;;
 
-      "[+ 새 프로젝트 추가]")
+      "$_CL_MSG_MENU_ADD")
         _cl_handle_add
         continue
         ;;
 
       *)
-        # │ 기준으로 두 번째 필드(경로) 추출
         local proj_path
         proj_path=$(printf "%s" "$sel" | "$_CL_PYTHON3" -c "
 import sys
@@ -335,12 +365,11 @@ else:
 " 2>/dev/null)
 
         if [[ -z "$proj_path" || ! -d "$proj_path" ]]; then
-          printf "\n❌ 경로를 찾을 수 없습니다: '%s'\n" "$proj_path"
+          printf "\n❌ $_CL_MSG_PATH_ERR\n" "$proj_path"
           "$_CL_SLEEP" 2
           continue
         fi
 
-        # 선택 확정: last_used 갱신 → precmd 훅으로 .zshrc 완료 후 자동 실행
         _cl_touch_project "$proj_path"
         export CLAUDE_LAUNCHER_SKIP=1
         export _CL_LAUNCH_PATH="$proj_path"

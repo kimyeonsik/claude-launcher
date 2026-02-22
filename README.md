@@ -1,14 +1,142 @@
 # Claude Launcher
 
-새 터미널을 열 때마다 등록된 프로젝트 목록을 보여주고, 선택하면 해당 경로로 이동 후 `claude`를 자동 실행하는 zsh 런처.
+A zsh launcher that shows your registered projects when opening a new terminal. Select a project to navigate to its directory and automatically run `claude`.
+
+**[한국어](#한국어)**
+
+## Features
+
+- **5-second countdown** — press any key to open the selector, or wait for a normal terminal
+- **fzf interactive UI** — browse and select projects with directory preview
+- **Recent-first sorting** — last used project appears at the top
+- **Directory browser** — add projects by browsing with fzf instead of typing paths
+- **Warp compatible** — uses precmd hook to avoid shell startup timeout
+- **i18n support** — English and Korean (auto-detected from `$LANG`)
+
+## Requirements
+
+| Tool | Install |
+|------|---------|
+| zsh | Built into macOS |
+| python3 | Built into macOS or `brew install python` |
+| fzf | `brew install fzf` (auto-installed by install script) |
+| claude | [Claude Code](https://claude.ai/code) |
+
+## Install
+
+```bash
+git clone https://github.com/kimyeonsik/claude-launcher.git
+cd claude-launcher
+zsh install.sh
+```
+
+Then open a new terminal, or:
+
+```bash
+source ~/.zshrc
+```
+
+## Uninstall
+
+```bash
+cd claude-launcher
+zsh uninstall.sh
+```
+
+## Usage
+
+### Basic flow
+
+Opens automatically with every new terminal:
+
+```
+╔══════════════════════════════════════════════════════╗
+║              Claude Code Launcher                    ║
+║                                                      ║
+║   Press any key to open project list.                ║
+║   5 seconds until normal terminal.                   ║
+╚══════════════════════════════════════════════════════╝
+```
+
+| Action | Result |
+|--------|--------|
+| Wait 5s | Normal terminal |
+| Press any key | Project selector |
+
+### Project selector
+
+```
+▶ (type to filter)
+────────────────────────────────────────────────────────────
+  [→ Normal Terminal]
+  [+ Add New Project]
+  my-app                    │ /Users/you/projects/my-app   │ 2026-02-22T11:00:00
+  api-server                │ /Users/you/projects/api      │ 2026-02-21T09:30:00
+```
+
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` | Navigate |
+| `Enter` | Select (project → run claude) |
+| `Esc` | Normal terminal |
+
+### Skip launcher
+
+```bash
+CLAUDE_LAUNCHER_SKIP=1 zsh
+```
+
+### Set language
+
+```bash
+# Auto-detect from $LANG (default)
+# Or set explicitly:
+export CLAUDE_LAUNCHER_LANG=en  # English
+export CLAUDE_LAUNCHER_LANG=ko  # Korean
+```
+
+## File structure
+
+```
+~/.local/bin/claude-launcher          # Main script
+~/.config/claude-launcher/
+├── projects.json                     # Project list (JSON)
+├── preview.sh                        # fzf preview script (auto-generated)
+└── lang/
+    ├── en.sh                         # English strings
+    └── ko.sh                         # Korean strings
+```
+
+### projects.json format
+
+```json
+[
+  {
+    "name": "my-app",
+    "path": "/Users/you/projects/my-app",
+    "last_used": "2026-02-22T11:00:00"
+  }
+]
+```
+
+## License
+
+MIT
+
+---
+
+# 한국어
+
+새 터미널을 열 때마다 등록된 프로젝트 목록을 보여주고, 선택하면 해당 경로로 이동 후 `claude`를 자동 실행하는 zsh 런처입니다.
 
 ## 기능
 
 - **5초 카운트다운** — 아무 키를 누르면 선택 UI, 타임아웃 시 일반 터미널
-- **fzf 인터랙티브 UI** — 프로젝트 목록 탐색 및 선택, 오른쪽 패널에 디렉토리 미리보기
+- **fzf 인터랙티브 UI** — 프로젝트 목록 탐색 및 선택, 디렉토리 미리보기
 - **최근 사용 순 정렬** — 마지막으로 열었던 프로젝트가 상단에 표시
 - **디렉토리 탐색으로 프로젝트 추가** — 경로를 직접 타이핑하지 않고 fzf로 탐색
 - **Warp 호환** — precmd 훅 방식으로 쉘 시작 타임아웃 없이 동작
+- **다국어 지원** — 영어, 한국어 (`$LANG` 자동 감지)
 
 ## 요구사항
 
@@ -36,6 +164,7 @@ source ~/.zshrc
 ## 제거
 
 ```bash
+cd claude-launcher
 zsh uninstall.sh
 ```
 
@@ -43,7 +172,7 @@ zsh uninstall.sh
 
 ### 기본 흐름
 
-새 터미널을 열면 자동 실행됩니다.
+새 터미널을 열면 자동 실행됩니다:
 
 ```
 ╔══════════════════════════════════════════════════════╗
@@ -82,27 +211,25 @@ zsh uninstall.sh
 CLAUDE_LAUNCHER_SKIP=1 zsh
 ```
 
-## 파일 구조
+### 언어 설정
 
-설치 후 생성되는 파일:
+```bash
+# $LANG 에서 자동 감지 (기본값)
+# 또는 직접 설정:
+export CLAUDE_LAUNCHER_LANG=en  # 영어
+export CLAUDE_LAUNCHER_LANG=ko  # 한국어
+```
+
+## 파일 구조
 
 ```
 ~/.local/bin/claude-launcher          # 메인 스크립트
 ~/.config/claude-launcher/
 ├── projects.json                     # 프로젝트 목록 (JSON)
-└── preview.sh                        # fzf 미리보기 스크립트 (자동 생성)
-```
-
-### projects.json 형식
-
-```json
-[
-  {
-    "name": "my-app",
-    "path": "/Users/bread/projects/my-app",
-    "last_used": "2026-02-22T11:00:00"
-  }
-]
+├── preview.sh                        # fzf 미리보기 스크립트 (자동 생성)
+└── lang/
+    ├── en.sh                         # 영어 문자열
+    └── ko.sh                         # 한국어 문자열
 ```
 
 ## 라이선스
